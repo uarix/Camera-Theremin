@@ -27,13 +27,12 @@ current_volume = 0.5
 target_freq = current_freq  
 target_volume = current_volume  
 
-# 用于存储前几个频率和音量的值以进行平滑，减少cracks
-FREQ_HISTORY = [current_freq] * 5
+# 用于存储前几个频率和音量的值以进行平滑，减少cracks  
+FREQ_HISTORY = [current_freq] * 5  
 VOL_HISTORY = [current_volume] * 5  
 
-# 频率和音量变化步长  
-FREQ_STEP = 10  # 增大频率步长  
-VOL_STEP = 0.05  # 增大音量步长  
+FREQ_STEP = 5  # 频率步长  
+VOL_STEP = 0.05  # 音量步长  
 
 # 创建一个锁，用于线程间同步频率和音量的更新  
 lock = threading.Lock()  
@@ -47,14 +46,15 @@ def smooth_value(history_list, new_value, history_length=5):
         history_list.pop(0)  
     return np.mean(history_list)  
 
-def get_sine_wave(start_freq, end_freq, start_volume, end_volume, sample_rate, duration):  
+def get_sine_wave(current_freq, target_freq, current_volume, target_volume, sample_rate, duration):  
     """  
     生成正弦波  
     """  
     t = np.linspace(0, duration, int(sample_rate * duration), False)  
-    freq = np.linspace(start_freq, end_freq, int(sample_rate * duration))  
-    volume = np.linspace(start_volume, end_volume, int(sample_rate * duration))  
-    wave = volume * np.sin(2 * np.pi * freq * t)  
+    freq = np.linspace(current_freq, target_freq, int(sample_rate * duration))  
+    wave = np.sin(2 * np.pi * freq * t)  
+    volume = np.linspace(current_volume, target_volume, int(sample_rate * duration))  
+    wave = volume * wave  
     return wave.astype(np.float32)  
 
 def audio_callback(in_data, frame_count, time_info, status):  
@@ -70,18 +70,11 @@ def audio_callback(in_data, frame_count, time_info, status):
         smooth_freq = smooth_value(FREQ_HISTORY, target_freq)  
         smooth_vol = smooth_value(VOL_HISTORY, target_volume)  
 
-        if abs(smooth_freq - current_freq) > FREQ_STEP:  
-            next_freq = current_freq + np.sign(smooth_freq - current_freq) * FREQ_STEP  
-        else:  
-            next_freq = smooth_freq  
-
-        if abs(smooth_vol - current_volume) > VOL_STEP:  
-            next_vol = current_volume + np.sign(smooth_vol - current_volume) * VOL_STEP  
-        else:  
-            next_vol = smooth_vol  
+        next_freq = smooth_freq  
+        next_vol = smooth_vol  
 
     buffer = get_sine_wave(current_freq, next_freq, current_volume, next_vol, SAMPLE_RATE, frame_count / SAMPLE_RATE)  
-    
+
     with lock:  
         current_freq = next_freq  
         current_volume = next_vol  
@@ -92,13 +85,13 @@ def main():
     """  
     主函数  
     """  
-    global target_freq, target_volume  
+    global target_freq, target_volume, current_freq, current_volume  
     stream = p.open(format=pyaudio.paFloat32,  
                     channels=1,  
                     rate=SAMPLE_RATE,  
                     frames_per_buffer=BUFFER_SAMPLES,  
                     output=True,  
-                    stream_callback=audio_callback)  # 设置音频回调函数
+                    stream_callback=audio_callback)  # 设置音频回调函数  
 
     stream.start_stream()  
 
